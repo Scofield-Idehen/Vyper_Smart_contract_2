@@ -1,7 +1,11 @@
 # pragma version ^ 0.4.0
 
-# @author: Scofield Idehen
-
+"""
+@ license MIT
+@ title Buy me a coffee
+@ author: Scofield Idehen
+@ notice: this contract is about building a contract 
+"""
 
 interface AggregatorV3Interface:
     def decimals() -> uint8: view
@@ -9,30 +13,41 @@ interface AggregatorV3Interface:
     def version() -> uint256: view
     def latestAnswer() -> int256: view
 
-mim_USD: uint256 #state variable 
-priceFeed: public(AggregatorV3Interface)
+
+#storage veriable 
+
+#mim_USD: public(constant(uint256)) = as_wei_value(5, "ether") #constant are not storage vairable 
+min_USD: immutable(uint256)
+priceFeed: public(immutable(AggregatorV3Interface))
 owner: address
 funders: public(DynArray[address, 1000])
+magicNumber: constant(uint256) = 1 * (10 ** 18)
 #map address to amount in uint256
 funder_to_funders: public(HashMap[address, uint256])
 
 @deploy
-def __init__(price_feed: address): #we can pass the address we want sapolia or any other 
-    self.priceFeed = AggregatorV3Interface(price_feed) #here we pass Sapolia 
+def __init__(price_feed: address, _min_usd: uint256): #we can pass the address we want sapolia or any other 
+    priceFeed = AggregatorV3Interface(price_feed) #here we pass Sapolia 
     self.owner = msg.sender
-    
+    min_USD = _min_usd
 
 @external
-@payable
+@payable 
 def fund():
+    self._fund() 
+
+@internal
+@payable
+def _fund():
     usd_value_of_eth: uint256 = self.ETH_USD(msg.value)
-    assert usd_value_of_eth >= self.mim_USD  #1000000000000000000
+    assert usd_value_of_eth >= min_USD  #1000000000000000000 #why dont we pass the min to init?
     self.funders.append(msg.sender)
 
 @external 
 def withdraw():
     assert msg.sender == self.owner, "not contract owner "
-    send(self.owner, self.balance)
+    #send(self.owner, self.balance)
+    raw_call(owner, b"", value= self.balance)
     self.funders = [] #reset the array to zero
     for funder: address in self.funders:
         self.funder_to_funders[funder] = 0
@@ -41,10 +56,12 @@ def withdraw():
 @internal
 @view
 def ETH_USD(eth_amount: uint256) -> uint256: #takes a paremeneter for the price 
-    price: int256 = staticcall self.priceFeed.latestAnswer() # checks the current ETh price
-    eth_price: uint256 = convert (price, uint256) * (10 ** 10) #convert to uint as it is in int
-    eth_amount_in_USD: uint256 = (eth_amount * eth_price) // (1 * (10 ** 10)) #reomve the extra decimal places 
+    price: int256 = staticcall priceFeed.latestAnswer() # checks the current ETh price
+    eth_price: uint256 = convert(price, uint256) * (10 ** 10) #convert to uint as it is in int
+    eth_amount_in_USD: uint256 = (eth_amount * eth_price) // magicNumber #reomve the extra decimal places 
+
     return eth_amount_in_USD
+
 
 
 @external 
@@ -55,10 +72,13 @@ def get_eth_to_usd_rate(eth_amount: uint256) -> uint256:
 @external
 @view
 def get_price() -> int256:
-    priceFeed: AggregatorV3Interface = AggregatorV3Interface(0x694AA1769357215DE4FAC081bf1f309aDC325306)
-    return staticcall priceFeed.latestAnswer()
+    s_priceFeed: AggregatorV3Interface = AggregatorV3Interface(0x694AA1769357215DE4FAC081bf1f309aDC325306)
+    return staticcall s_priceFeed.latestAnswer()
 
 
 
 
-#0x694AA1769357215DE4FAC081bf1f309aDC325306
+@external 
+@payable
+def __default__():
+    self._fund() 
